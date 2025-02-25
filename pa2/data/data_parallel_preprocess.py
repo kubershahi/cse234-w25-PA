@@ -42,4 +42,32 @@ def split_data(
         - Do not shuffle the data indices as shuffling will be done later.
     """
 
-    #TODO: Your code here
+    assert x_train.shape[0] % dp_size == 0, "Data size must be divisible by dp_size"
+
+    world_size = mp_size * dp_size  # Total number of processes
+
+
+    dp_rank = rank // mp_size  # Determines which data chunk to use
+    mp_rank = rank % mp_size  # Not used for data splitting (only for MP computations)
+
+
+    samples_per_dp = x_train.shape[0] // dp_size
+
+
+    start_idx = dp_rank * samples_per_dp
+    end_idx = start_idx + samples_per_dp
+
+    split_x_train = x_train[start_idx:end_idx]
+    split_y_train = y_train[start_idx:end_idx]
+
+    return split_x_train, split_y_train
+
+
+
+
+
+
+
+
+
+

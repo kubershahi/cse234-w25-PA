@@ -1,6 +1,7 @@
 from mpi4py import MPI
 import numpy as np
 
+
 class Communicator(object):
     def __init__(self, comm: MPI.Comm):
         self.comm = comm
@@ -64,30 +65,100 @@ class Communicator(object):
         """
         A manual implementation of all-reduce using a reduce-to-root
         followed by a broadcast.
-        
+
         Each non-root process sends its data to process 0, which applies the
         reduction operator (by default, summation). Then process 0 sends the
         reduced result back to all processes.
-        
+
         The transfer cost is computed as:
           - For non-root processes: one send and one receive.
           - For the root process: (n-1) receives and (n-1) sends.
         """
-        #TODO: Your code here
+
+        rank = self.comm.Get_rank()
+        size = self.comm.Get_size()
+
+        # Allocate a buffer for the reduction
+        if rank == 0:
+            buffer = np.zeros_like(src_array)
+        else:
+            buffer = None
+
+        # Step 1: Reduce to Rank 0
+        if rank == 0:
+            np.copyto(buffer, src_array)  # Copy initial values
+            for i in range(1, size):
+                recv_buf = np.empty_like(src_array)
+                self.comm.Recv(recv_buf, source=i)
+
+                if op == MPI.SUM:
+                    buffer += recv_buf  # Apply sum
+                elif op == MPI.MIN:
+                    buffer = np.minimum(buffer, recv_buf)  # Apply min
+                else:
+                    raise ValueError("Unsupported operation for myAllreduce")
+
+            # Update bytes transferred for all receives
+            self.total_bytes_transferred += src_array.itemsize * src_array.size * (size - 1)
+
+        else:
+            # Non-root ranks send their data to root
+            self.comm.Send(src_array, dest=0)
+
+            # Update bytes transferred for sending
+            self.total_bytes_transferred += src_array.itemsize * src_array.size
+
+        # Step 2: Broadcast the result to all processes
+        self.comm.Bcast(buffer if rank == 0 else dest_array, root=0)
+
+        # Update bytes transferred for broadcasting
+        self.total_bytes_transferred += src_array.itemsize * src_array.size * (size - 1)
+
+        if rank == 0:
+            np.copyto(dest_array, buffer)
 
     def myAlltoall(self, src_array, dest_array):
         """
         A manual implementation of all-to-all where each process sends a
         distinct segment of its source array to every other process.
-        
+
         It is assumed that the total length of src_array (and dest_array)
         is evenly divisible by the number of processes.
-        
+
         The algorithm loops over the ranks:
           - For the local segment (when destination == self), a direct copy is done.
           - For all other segments, the process exchanges the corresponding
             portion of its src_array with the other process via Sendrecv.
-            
+
         The total data transferred is updated for each pairwise exchange.
         """
-        #TODO: Your code here
+
+        rank = self.comm.Get_rank()
+        size = self.comm.Get_size()
+
+        assert src_array.size % size == 0, "src_array size must be divisible by the number of processes"
+        assert dest_array.size % size == 0, "dest_array size must be divisible by the number of processes"
+
+        segment_size = src_array.size // size
+        segment_dtype = src_array.dtype
+
+        for i in range(size):
+            send_offset = i * segment_size  # Send correct portion
+            recv_offset = i * segment_size  # Receive correct portion
+
+            send_buf = np.copy(src_array[send_offset:send_offset + segment_size])
+            recv_buf = np.empty(segment_size, dtype=segment_dtype)
+
+            if i == rank:
+                # Self-copy for local segment
+                np.copyto(dest_array[recv_offset:recv_offset + segment_size], send_buf)
+            else:
+                # Correcting previous bug: Swap destination & source
+                self.comm.Sendrecv(send_buf, dest=i, recvbuf=recv_buf, source=i)
+                np.copyto(dest_array[recv_offset:recv_offset + segment_size], recv_buf)
+
+            # Update total bytes transferred
+            self.total_bytes_transferred += send_buf.itemsize * send_buf.size
+            self.total_bytes_transferred += recv_buf.itemsize * recv_buf.size
+
+
