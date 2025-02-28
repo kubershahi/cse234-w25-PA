@@ -1,0 +1,7 @@
+The MPI implementation is slightly faster than the custom myAlltoall implementation. The gap is relatively small, but it becomes noticeable as the number of processes increases.
+
+A reason for this is:
+
+* The custom myAlltoall implementation performs explicit Sendrecv calls in a loop, causing synchronization overhead.
+
+* MPI.Alltoall likely uses non-blocking communication (Isend and Irecv), which allows overlapping of send and receive operations, improving efficiency.
