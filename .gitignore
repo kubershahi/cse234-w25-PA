@@ -43,3 +43,6 @@ coverage/
 *.swp
 *.swo
 *~
+
+# Python cache
+__pycache__/
