@@ -68,6 +68,8 @@ This entire section combined will be 40 points total. We will grade you on compl
 
 Please make sure to test on the GPUs that we have mentioned here. Speedup is much much different on different GPUs! **AND DO NOT CHANGE THE CODE** in the performance benchmark section of the notebook. We are only testing on 2048x2048 fp16 matmul + add + relu, with 5000 iterations.
 
+For submission, **please run your jupyter notebook fully with your best submission speedup**. This way we can have an easier time grading and looking at your implementation!
+
 ## Part 2: Tensor Parallel Communication (60 pts)
 
 In this part of the programming assignment, you will work on developing communication protocols for Data Parallel and Tensor Model Parallel training from the ground up, utilizing the Message Passing Interface ([MPI](https://mpi4py.readthedocs.io/en/stable/)) and NumPy.
@@ -228,6 +230,8 @@ to check the correctness of your implementation. We can also see the time consum
 Discuss the time difference between your implementation and the MPI one, and give some possible reason if there is a gap. 
 If your implementation is fast (within 150% time consumption of MPI version), you can get a bonus (+2.5 pts for each function)!
 If your implementation is as fast as the MPI implementation (within 105% time consumption of MPI version), you can get a bonus (+5 pts for each function)!
+
+Put your discussion (2-3 sentences) in the file discussion2-1.txt.
 
 ### 2.2 Data Split for Data Parallel Training (5 pts)
 
