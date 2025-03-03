@@ -181,35 +181,35 @@ def naive_collect_backward_output(
 
 
 def naive_collect_backward_x(
-        grad_x: np.ndarray,
-        mp_comm,
-        mp_size: int,
+    grad_x: np.ndarray,
+    mp_comm,
+    mp_size: int,
 ):
     """
     Use reduce-scatter / all-to-all to combine the contributions for grad_x from all nodes
     and scatter the reduced result along the input feature dimension.
-
+    
     The grad_x tensor (gradient with respect to fc_o's input) has shape
         (batch_size, seq_length, in_dim),
-    and the fc_o's weight matrix is sharded along the in_dim axis. In the
-    backward pass, each node computes a local grad_x and then these must be
+    and the fc_o's weight matrix is sharded along the in_dim axis. In the 
+    backward pass, each node computes a local grad_x and then these must be 
     summed across nodes. Instead of summing the full tensor and then slicing,
     we perform a reduce-scatter / all-to-all.
-
+    
     Parameters
     ----------
     grad_x : np.ndarray
-        The locally computed grad_x for fc_o, of shape
+        The locally computed grad_x for fc_o, of shape 
         (batch_size, seq_length, in_dim).
     mp_comm :
         The model parallel communicator. It is assumed to expose methods such as reduce-scatter / all-to-all.
     mp_size : int
         The total number of model parallel nodes.
-
+    
     Returns
     -------
     collected_grad_x : np.ndarray
-        The reduced and scattered grad_x with shape
+        The reduced and scattered grad_x with shape 
         (batch_size, seq_length, in_dim // mp_size).
     """
 
@@ -228,5 +228,23 @@ def naive_collect_backward_x(
     # Step 4: Reshape buffer for scattering
     reshaped_buffer = summed_grad_x.reshape(batch_size, seq_length, mp_size, part_size)
 
+    # Print debug information
+    rank = mp_comm.Get_rank()
+    if rank == 0:
+        print(f"Rank {rank} - reshaped_buffer.shape: {reshaped_buffer.shape}")
+
+    # Step 5: Prepare send buffer only on rank 0
+    sendbuf = None
+    if rank == 0:
+        sendbuf = reshaped_buffer.transpose(2, 0, 1, 3).reshape(mp_size, -1)
+        print(
+            f"Rank {rank} - sendbuf.shape: {sendbuf.shape}, expected: {mp_size} x {batch_size * seq_length * part_size}")
+
+    # Print expected receive buffer size before Scatter
+    print(
+        f"Rank {rank} - collected_grad_x.shape: {collected_grad_x.shape}, expected: {batch_size, seq_length, part_size}")
+
+    # Scatter the summed gradients to the correct partitions
+    mp_comm.Scatter(sendbuf, collected_grad_x)
 
     return collected_grad_x
