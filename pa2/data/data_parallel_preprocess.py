@@ -44,11 +44,11 @@ def split_data(
 
     assert x_train.shape[0] % dp_size == 0, "Data size must be divisible by dp_size"
 
-    world_size = mp_size * dp_size  # Total number of processes
+    world_size = mp_size * dp_size
 
 
-    dp_rank = rank // mp_size  # Determines which data chunk to use
-    mp_rank = rank % mp_size  # Not used for data splitting (only for MP computations)
+    dp_rank = rank // mp_size
+    mp_rank = rank % mp_size
 
 
     samples_per_dp = x_train.shape[0] // dp_size

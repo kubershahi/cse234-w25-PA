@@ -49,24 +49,22 @@ def get_info(
     part_out_dim : int
         The partitioned output dimension for the FC layer.
     """
-    # TODO: Your code here
 
-    mp_idx = rank % mp_size  # MP rank index within a DP group
-    dp_idx = rank // mp_size  # DP group index
+    mp_idx = rank % mp_size
+    dp_idx = rank // mp_size
 
-    # Create Model Parallel Communicator (Processes within the same DP group)
+
     mp_comm = comm.Split(color=dp_idx, key=mp_idx)
 
-    # Create Data Parallel Communicator (Processes with the same MP index)
     dp_comm = comm.Split(color=mp_idx, key=dp_idx)
 
-    # Determine partitioning dimensions based on FC layer type
+
     if fc_layer in ['fc_q', 'fc_k', 'fc_v']:
-        part_in_dim = in_dim  # No partitioning on input
-        part_out_dim = out_dim // mp_size  # Partition output dimension
+        part_in_dim = in_dim
+        part_out_dim = out_dim // mp_size
     elif fc_layer == 'fc_o':
-        part_in_dim = in_dim // mp_size  # Partition input dimension
-        part_out_dim = out_dim  # No partitioning on output
+        part_in_dim = in_dim // mp_size
+        part_out_dim = out_dim
     else:
         raise ValueError("fc_layer must be one of ['fc_q', 'fc_k', 'fc_v', 'fc_o']")
 
@@ -88,18 +86,18 @@ def naive_collect_forward_input(
     """
 
     batch_size, seq_length, part_in_dim = x.shape
-    full_in_dim = part_in_dim * mp_size  # Reconstruct full input dimension
+    full_in_dim = part_in_dim * mp_size
 
-    # Allocate buffer for gathered data
+
     collected_x = np.empty((mp_size, batch_size, seq_length, part_in_dim), dtype=x.dtype)
 
-    # Ensure input buffer is contiguous
+
     x = np.ascontiguousarray(x)
 
-    # Gather data from all model parallel ranks
+
     mp_comm.Allgather(sendbuf=x, recvbuf=collected_x)
 
-    # Reshape and reorder to match expected format
+
     collected_x = collected_x.transpose(1, 2, 0, 3).reshape(batch_size, seq_length, full_in_dim)
 
     return collected_x
@@ -121,15 +119,15 @@ def naive_collect_forward_output(
     # TODO: Your code here
 
     batch_size, seq_length, part_out_dim = out.shape
-    full_out_dim = part_out_dim * mp_size  # Reconstruct full output dimension
+    full_out_dim = part_out_dim * mp_size
 
-    # Allocate buffer for gathered output
+
     collected_out = np.empty((mp_size, batch_size, seq_length, part_out_dim), dtype=out.dtype)
 
-    # Ensure output buffer is contiguous
+
     out = np.ascontiguousarray(out)
 
-    # Gather data from all model parallel ranks
+
     mp_comm.Allgather(sendbuf=out, recvbuf=collected_out)
 
     collected_out = collected_out.transpose(1, 2, 0, 3).reshape(batch_size, seq_length, full_out_dim)
@@ -216,35 +214,35 @@ def naive_collect_backward_x(
     batch_size, seq_length, in_dim = grad_x.shape
     part_size = in_dim // mp_size  # Partition size per rank
 
-    # Step 1: Allocate space for global sum across all ranks
+
     summed_grad_x = np.empty_like(grad_x)
 
-    # Step 2: Perform Allreduce to sum across all ranks
+
     mp_comm.Allreduce(grad_x, summed_grad_x, op=MPI.SUM)
 
-    # Step 3: Allocate buffer for scattering the reduced result
+
     collected_grad_x = np.empty((batch_size, seq_length, part_size), dtype=grad_x.dtype)
 
-    # Step 4: Reshape buffer for scattering
+
     reshaped_buffer = summed_grad_x.reshape(batch_size, seq_length, mp_size, part_size)
 
-    # Print debug information
+
     rank = mp_comm.Get_rank()
     if rank == 0:
         print(f"Rank {rank} - reshaped_buffer.shape: {reshaped_buffer.shape}")
 
-    # Step 5: Prepare send buffer only on rank 0
+
     sendbuf = None
     if rank == 0:
         sendbuf = reshaped_buffer.transpose(2, 0, 1, 3).reshape(mp_size, -1)
         print(
             f"Rank {rank} - sendbuf.shape: {sendbuf.shape}, expected: {mp_size} x {batch_size * seq_length * part_size}")
 
-    # Print expected receive buffer size before Scatter
+
     print(
         f"Rank {rank} - collected_grad_x.shape: {collected_grad_x.shape}, expected: {batch_size, seq_length, part_size}")
 
-    # Scatter the summed gradients to the correct partitions
+
     mp_comm.Scatter(sendbuf, collected_grad_x)
 
     return collected_grad_x

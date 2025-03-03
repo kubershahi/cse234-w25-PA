@@ -50,12 +50,11 @@ class Communicator(object):
             "dest_array size must be divisible by the number of processes"
         )
 
-        # Calculate the number of bytes in one segment.
+
         send_seg_bytes = src_array.itemsize * (src_array.size // nprocs)
         recv_seg_bytes = dest_array.itemsize * (dest_array.size // nprocs)
 
-        # Each process sends one segment to every other process (nprocs - 1)
-        # and receives one segment from each.
+
         self.total_bytes_transferred += send_seg_bytes * (nprocs - 1)
         self.total_bytes_transferred += recv_seg_bytes * (nprocs - 1)
 
@@ -78,15 +77,15 @@ class Communicator(object):
         rank = self.comm.Get_rank()
         size = self.comm.Get_size()
 
-        # Allocate a buffer for the reduction
+
         if rank == 0:
             buffer = np.zeros_like(src_array)
         else:
             buffer = None
 
-        # Step 1: Reduce to Rank 0
+
         if rank == 0:
-            np.copyto(buffer, src_array)  # Copy initial values
+            np.copyto(buffer, src_array)
             for i in range(1, size):
                 recv_buf = np.empty_like(src_array)
                 self.comm.Recv(recv_buf, source=i)
@@ -94,24 +93,24 @@ class Communicator(object):
                 if op == MPI.SUM:
                     buffer += recv_buf  # Apply sum
                 elif op == MPI.MIN:
-                    buffer = np.minimum(buffer, recv_buf)  # Apply min
+                    buffer = np.minimum(buffer, recv_buf)
                 else:
                     raise ValueError("Unsupported operation for myAllreduce")
 
-            # Update bytes transferred for all receives
+
             self.total_bytes_transferred += src_array.itemsize * src_array.size * (size - 1)
 
         else:
-            # Non-root ranks send their data to root
+
             self.comm.Send(src_array, dest=0)
 
-            # Update bytes transferred for sending
+
             self.total_bytes_transferred += src_array.itemsize * src_array.size
 
-        # Step 2: Broadcast the result to all processes
+
         self.comm.Bcast(buffer if rank == 0 else dest_array, root=0)
 
-        # Update bytes transferred for broadcasting
+
         self.total_bytes_transferred += src_array.itemsize * src_array.size * (size - 1)
 
         if rank == 0:
@@ -150,14 +149,13 @@ class Communicator(object):
             recv_buf = np.empty(segment_size, dtype=segment_dtype)
 
             if i == rank:
-                # Self-copy for local segment
+
                 np.copyto(dest_array[recv_offset:recv_offset + segment_size], send_buf)
             else:
-                # Correcting previous bug: Swap destination & source
+
                 self.comm.Sendrecv(send_buf, dest=i, recvbuf=recv_buf, source=i)
                 np.copyto(dest_array[recv_offset:recv_offset + segment_size], recv_buf)
 
-            # Update total bytes transferred
             self.total_bytes_transferred += send_buf.itemsize * send_buf.size
             self.total_bytes_transferred += recv_buf.itemsize * recv_buf.size
 
