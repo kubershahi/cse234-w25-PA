@@ -59,7 +59,7 @@ class ShardedLinear:
     """
     Linear layer that is sharded across processes
     Each process only holds a portion of the weight matrix
-    
+
     Requires that out_features is evenly divisible by the world size
     """
 
@@ -89,7 +89,7 @@ class ShardedLinear:
         # Create a buffer for the full output
         result = np.zeros((x.shape[0], self.out_features_global), dtype=np.float32)
 
-        # TODO: Produce the result of sharded linear layer.
+        result[:, self.output_offset:self.output_offset + self.local_out_features] = x @ self.weight + self.bias
 
         return result
 
@@ -112,12 +112,12 @@ class ShardedExpert:
 class MoE_TP:
     """
     Distributed Mixture of Experts using MPI for tensor parallelism
-    
+
     TP-style MoE:
     - Each process holds a portion of every expert (sharded experts)
     - Router is replicated on all processes
     - All-to-all and all-gather communication patterns for processing
-    
+
     Args:
         input_dim (int): Input feature dimension
         hidden_dim (int): Hidden dimension for each expert
@@ -149,24 +149,41 @@ class MoE_TP:
         """
         Distributed forward pass through the MoE model using tensor parallelism
         with optimized batch processing
-        
+
         Args:
             x: Input tensor of shape (batch_size, input_dim)
-            
+
         Returns:
             Output tensor of shape (batch_size, output_dim)
         """
         batch_size = x.shape[0]
 
+
+
         # Initialize output tensor
         outputs = np.zeros((batch_size, self.output_dim))
+
+        #final_outputs = np.zeros((batch_size, self.output_dim))
+
+        dims_per_expert = self.output_dim // self.world_size
 
         # TODO: Implement the TP-style MoE forward pass.
         # 1. Compute the routing indices and gates for each input
         indices, gates = self.router(x, self.topk)
-        # 2. Process experts parallel with TP style. 
+        # 2. Process experts parallel with TP style.
+        for k in range(self.topk):
+            for i in range(batch_size):
 
-        return outputs
+
+                expert_idx = indices[i, k]
+                gate = gates[i, k]
+                item = x[i:i + 1]  # (1, input_dim)
+                expert_output = self.experts[expert_idx](item)
+                outputs[i] += expert_output[0] * gate
+
+        final_outputs = mpi.allreduce(outputs)
+
+        return final_outputs
 
     def __call__(self, x):
         return self.forward(x)
@@ -175,10 +192,10 @@ class MoE_TP:
 class SimpleMoE:
     """
     Simple reference implementation of Mixture of Experts.
-    
+
     This class implements a basic MoE model that routes inputs to a subset
     of experts and combines their outputs using learned gating weights.
-    
+
     Args:
         input_dim (int): Input feature dimension
         hidden_dim (int): Hidden dimension for each expert
@@ -205,10 +222,10 @@ class SimpleMoE:
     def forward(self, x):
         """
         Forward pass through the MoE model
-        
+
         Args:
             x: Input tensor of shape (batch_size, input_dim)
-            
+
         Returns:
             Output tensor of shape (batch_size, output_dim)
         """
@@ -238,10 +255,10 @@ class SimpleMoE:
 class MoE_EP:
     """
     Distributed Mixture of Experts using MPI for expert parallelism
-    
-    EP-style MoE: 
+
+    EP-style MoE:
     Each process hosts exactly one expert. Router is replicated on all processes.
-    
+
     Args:
         input_dim (int): Input feature dimension
         hidden_dim (int): Hidden dimension for each expert
@@ -267,29 +284,35 @@ class MoE_EP:
     def forward(self, x):
         """
         Distributed forward pass through the MoE model
-        
+
         Args:
             x: Input tensor of shape (batch_size, input_dim)
-            
+
         Returns:
             Output tensor of shape (batch_size, output_dim)
         """
         batch_size = x.shape[0]
 
-        # Initialize output tensor
-        outputs = np.zeros((batch_size, self.output_dim))
 
-        # TODO: Implement the forward pass.
-        # 1. Compute the routing indices and gates for each input
         indices, gates = self.router(x, self.topk)
 
-        # 2. Process local inputs with this expert (within the device)
 
-        # 3. Communicate between devices to get the outputs from all experts
+        local_outputs = np.zeros((batch_size, self.output_dim))
 
-        # 4. Return the outputs
 
-        return outputs
+        for i in range(batch_size):
+            for k in range(self.topk):
+                expert_idx = indices[i, k]
+                gate = gates[i, k]
+
+                if expert_idx == self.rank:
+                    expert_output = self.expert(x[i:i + 1])
+                    local_outputs[i] += gate * expert_output[0]
+
+
+        final_outputs = mpi.allreduce(local_outputs)
+
+        return final_outputs
 
     def __call__(self, x):
         return self.forward(x)
