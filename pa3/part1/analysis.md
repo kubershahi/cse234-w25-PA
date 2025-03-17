@@ -4,6 +4,8 @@ Analysis of MoE Forward Pass Performance
 
 ![](/part1/moe_forward_pass.png)
 
+(Pls Check moe_forward_pass.png and new_benchmark.py)
+
 From the benchmark results in the graph, we observe the following trends:
 
 SimpleMoE exhibits a linear increase in forward pass time as batch size increases. This is expected since there is no parallelism, and computation scales directly with the input size.
