@@ -81,16 +81,12 @@ def run_moe(
 def benchmark_moe():
     # Test simple MoE
     simple_result = run_moe(moe_type="simple")
-    print(f"Simple MoE: {simple_result['avg_duration_ms']} ms")
 
     # Test TP MoE
     tp_result = run_moe(moe_type="tp")
-    print(f"TP MoE: {tp_result['avg_duration_ms']} ms")
 
     # Test EP MoE
     ep_result = run_moe(moe_type="ep")
-    print(f"EP MoE: {ep_result['avg_duration_ms']} ms")
-
 
 if __name__ == "__main__":
     benchmark_moe()
