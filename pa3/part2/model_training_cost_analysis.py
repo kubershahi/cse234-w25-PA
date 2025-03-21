@@ -78,7 +78,7 @@ def model_training_cost_analysis_deepseek(model_config_path):
     intermediate_size = config['intermediate_size']
     num_hidden_layers = config['num_hidden_layers']
     num_attention_heads = config['num_attention_heads']
-    max_sequence_length = config['max_position_embeddings']
+    max_sequence_length = config['max_sequence_length']
     
     # MoE specific parameters
     n_routed_experts = config['n_routed_experts']
