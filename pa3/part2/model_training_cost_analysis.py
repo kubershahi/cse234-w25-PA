@@ -17,7 +17,7 @@ def model_training_cost_analysis_llama(model_config_path):
     max_sequence_length = config['max_sequence_length']
 
     '''
-    Parameters calculation
+    Model Parameters calculation
     '''
 
     # Embedding layer parameters - embedding parameters, no positional embeddings since RoPE is used
@@ -36,17 +36,16 @@ def model_training_cost_analysis_llama(model_config_path):
     total_params = embedding_params + transformer_params + final_layer_params
 
     '''
-    TFLOPs calculation for formwar pass of a single transformer layer with b = 1 and
+    TFLOPs calculation for a forward pass of a single transformer layer with b = 1
     '''
-    
-    # Calculate TFLOPs per layer with b = 1
+    # Calculate TFLOPs per layer with b = 1, taken from lecture slides
     attn_matmult_flops = 3 * 2 * max_sequence_length * hidden_size * hidden_size
     attn_softmax_flops = 2 * max_sequence_length * max_sequence_length * hidden_size \
                     + 3 * max_sequence_length * max_sequence_length * num_attention_heads
     attn_weighted_sum_flops = 2 * max_sequence_length * max_sequence_length * hidden_size
     output_matmult_flops = 2 * max_sequence_length * hidden_size * hidden_size
 
-    swiglu_flops = 6 * max_sequence_length * hidden_size * 4 * hidden_size
+    swiglu_flops = 6 * max_sequence_length * hidden_size * 4 * hidden_size # ( i = 4h)
 
     flops_layer_TF = (attn_matmult_flops + attn_softmax_flops + attn_weighted_sum_flops + \
                             output_matmult_flops + swiglu_flops) / 1e12
@@ -61,6 +60,7 @@ def model_training_cost_analysis_llama(model_config_path):
     attn_weights = 4 * hidden_size * hidden_size # (Q, K, V, O)
     mlp_weights = 2 * intermediate_size * hidden_size # (W1, W2)
 
+    # final output of MLP layer, only stored as checkpoint rematerialization is used
     final_mlp_output = max_sequence_length * hidden_size
 
     peak_memory = (layernorm_weights + attn_weights + mlp_weights + final_mlp_output) * 2 # 2 for fp16
@@ -71,6 +71,10 @@ def model_training_cost_analysis_llama(model_config_path):
 def model_training_cost_analysis_deepseek(model_config_path):
     with open(model_config_path, 'r') as f:
         config = json.load(f)
+    
+    '''
+    Model Parameters calculation
+    '''
     
     # Model parameters
     vocab_size = config['vocab_size']
@@ -86,20 +90,20 @@ def model_training_cost_analysis_deepseek(model_config_path):
     moe_intermediate_size = config['moe_intermediate_size']
     num_experts_per_tok = config['num_experts_per_tok']
 
-    # Parameters calculation
+    # Embedding lyaer parameters
     embedding_params = vocab_size * hidden_size
 
-    # Per layer parameters
-    layernorm_params = 2 * 2 * hidden_size
+    # Attention block parameters
+    layernorm_params = 2 * 2 * hidden_size # 1 for pre-attention and 1 for post-attention
     attention_params = 4 * hidden_size * hidden_size
     
-    # MoE parameters per layer
-    expert_mlp_params = n_routed_experts * (3 * moe_intermediate_size * hidden_size)  # 2x for up & down projections
-    shared_mlp_params = n_shared_experts * (3 * intermediate_size * hidden_size)      # 2x for up & down projections
-    router_params = hidden_size * n_routed_experts
+    # Shared MLP, Router, MoE parameters
+    shared_mlp_params = n_shared_experts * (3 * intermediate_size * hidden_size)      # 3x for up & down projections
+    router_params = hidden_size * n_routed_experts # gated routed parameters
+    expert_mlp_params = n_routed_experts * (3 * moe_intermediate_size * hidden_size)  # 3x for up & down projections
     
-    transformer_params = num_hidden_layers * (layernorm_params + attention_params + 
-                                            expert_mlp_params + shared_mlp_params + router_params)
+    transformer_params = num_hidden_layers * (layernorm_params + attention_params + shared_mlp_params + 
+                                                router_params + expert_mlp_params)
     
     # Final layer parameters
     final_layer_params = 2 * hidden_size + hidden_size * vocab_size
@@ -107,7 +111,11 @@ def model_training_cost_analysis_deepseek(model_config_path):
     # Total parameters
     total_params = embedding_params + transformer_params + final_layer_params
 
-    # TFLOPs calculation for forward pass (b=1)
+    '''
+    TFLOPs calculation for a forward pass of a single transformer layer with b = 1
+    '''
+
+    # Attention block FLOPs
     attn_matmult_flops = 3 * 2 * max_sequence_length * hidden_size * hidden_size
     attn_softmax_flops = 2 * max_sequence_length * max_sequence_length * hidden_size + \
                         3 * max_sequence_length * max_sequence_length * num_attention_heads
@@ -121,6 +129,11 @@ def model_training_cost_analysis_deepseek(model_config_path):
 
     flops_layer_TF = (attn_matmult_flops + attn_softmax_flops + attn_weighted_sum_flops + 
                         output_matmult_flops + router_flops + expert_mlp_flops + shared_mlp_flops) / 1e12
+
+    '''
+    Peak memory calculation for forward pass of a single transformer layer with b = 1, fp16, and
+    checkpoint rematerialization i.e only final output of MLP layer is stored
+    '''
 
     # Peak memory calculation (fp16, with checkpoint rematerialization)
     layernorm_weights = 2 * 2 * hidden_size
@@ -168,8 +181,11 @@ def get_optimal_N_D_from_cost(cost_budget):
     # Given Scaling law constants
     a, b, c = 406.4, 410.7, 1.69
 
+    # Loss function to minimize. Using total_budget_flops = 6ND constraint to change the scaling loss function 
+    # in a single vaiable optimization problem. 6ND comes from the assumption 6 FLOPs is required to train per parameter per token, 
+    # 2 for forward pass, and 4 for backpropagation.
     def loss(N):
-        D = training_budget_flops/ (6 * N) # applying training budget constraint ~= 6ND
+        D = training_budget_flops/ (6 * N)
         return a / N**0.34 + b / D**0.29 + c
     
     # find optimal N using scipy's optimize
