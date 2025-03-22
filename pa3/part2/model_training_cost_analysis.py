@@ -45,10 +45,10 @@ def model_training_cost_analysis_llama(model_config_path):
     attn_weighted_sum_flops = 2 * max_sequence_length * max_sequence_length * hidden_size
     output_matmult_flops = 2 * max_sequence_length * hidden_size * hidden_size
 
-    swiglu_flops = 6 * max_sequence_length * hidden_size * 4 * hidden_size # ( i = 4h)
+    mlp_flops = 6 * max_sequence_length * hidden_size * 4 * hidden_size # ( i = 4h)
 
     flops_layer_TF = (attn_matmult_flops + attn_softmax_flops + attn_weighted_sum_flops + \
-                            output_matmult_flops + swiglu_flops) / 1e12
+                            output_matmult_flops + mlp_flops) / 1e12
     
     '''
     Peak memory calculation for forward pass of a single transformer layer with b = 1, fp16, and
